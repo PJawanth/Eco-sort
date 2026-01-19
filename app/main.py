@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 import av
+from utils.ai_engine import GeminiEngine
 
 # Shared detection state for thread-safe communication
 @dataclass
@@ -52,8 +53,8 @@ class DetectionState:
 # Global detection state instance
 _detection_state = DetectionState()
 
-from utils.ai_engine import GeminiEngine
-from components.webcam import render_webcam_capture
+
+from app.components.webcam import render_webcam_capture
 
 # Load environment variables
 load_dotenv()
