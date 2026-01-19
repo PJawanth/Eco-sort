@@ -127,6 +127,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r app/requirements.txt
+          # Ensure Gemini API key is available in CI environment via secrets
+          if [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+            echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" >> $GITHUB_ENV
+          fi
           pip install pytest pytest-asyncio pytest-cov pytest-xdist pytest-timeout
           
       - name: Run tests with coverage

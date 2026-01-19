@@ -64,6 +64,7 @@ class GeminiEngine:
         Raises:
             ValueError: If API key is not available.
         """
+        # Prefer injected api_key (from CI/CD secrets). Fall back to env for local dev.
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self.model_name = model
         self._model = None
