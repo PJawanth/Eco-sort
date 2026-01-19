@@ -3,6 +3,14 @@ EcoSort-AI - Main Streamlit Application
 AI-Powered Waste Classification for a Sustainable Future
 """
 
+import sys
+import pathlib
+# Ensure repository root is on sys.path so top-level packages (utils, components)
+# can be imported when running app/main.py directly (e.g., `python app/main.py` or
+# `streamlit run app/main.py`). Insert at front to prefer local packages.
+repo_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(repo_root))
+
 import logging
 import os
 import time
