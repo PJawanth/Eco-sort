@@ -14,6 +14,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
+# Module-level placeholder for google.generativeai so tests can patch it
+genai = None
+
 
 class ClassificationError(Exception):
     """Custom exception for classification errors."""
@@ -53,7 +56,7 @@ class GeminiEngine:
     }
     """
     
-    def __init__(self, api_key: str | None = None, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str | None = None, model: str = "gemini-2.5-flash"):
         """
         Initialize the Gemini Engine.
         
@@ -99,27 +102,33 @@ class GeminiEngine:
         Returns:
             Configured Gemini GenerativeModel instance.
         """
+        global genai
         if self._model is None:
-            try:
-                import google.generativeai as genai
-                
-                genai.configure(api_key=self.api_key)
-                self._model = genai.GenerativeModel(
-                    model_name=self.model_name,
-                    generation_config={
-                        "temperature": 0.1,
-                        "top_p": 0.95,
-                        "top_k": 40,
-                        "max_output_tokens": 1024,
-                    }
-                )
-                logger.info(f"Initialized Gemini model: {self.model_name}")
-            except ImportError:
-                logger.error("google-generativeai package not installed")
-                raise ClassificationError(
-                    "Gemini SDK not installed",
-                    "AI service is not configured properly"
-                )
+            # Use module-level `genai` if tests or CI injected a mock.
+            if genai is None:
+                try:
+                    import google.generativeai as _genai
+
+                    genai = _genai
+                except ImportError:
+                    logger.error("google-generativeai package not installed and genai not provided")
+                    raise ClassificationError(
+                        "Gemini SDK not installed",
+                        "AI service is not configured properly"
+                    )
+
+            # Configure and create model instance
+            genai.configure(api_key=self.api_key)
+            self._model = genai.GenerativeModel(
+                model_name=self.model_name,
+                generation_config={
+                    "temperature": 0.1,
+                    "top_p": 0.95,
+                    "top_k": 40,
+                    "max_output_tokens": 1024,
+                }
+            )
+            logger.info(f"Initialized Gemini model: {self.model_name}")
         
         return self._model
     
