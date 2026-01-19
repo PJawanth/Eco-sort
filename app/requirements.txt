@@ -25,6 +25,8 @@ httpx>=0.27.0
 
 opencv-python-headless
 
+streamlit-webrtc
+
 # ===========================================
 # Development Dependencies (install separately)
 # ===========================================
