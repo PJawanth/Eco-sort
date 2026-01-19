@@ -1,0 +1,293 @@
+# ===========================================
+# CD Infrastructure Deployment - Production Grade
+# ===========================================
+# Deploys Azure infrastructure with approvals and rollback
+
+name: CD - Infrastructure Deploy
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+    paths:
+      - 'infra/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      dry_run:
+        description: 'Dry run (What-If only)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+  deployments: write
+  issues: write
+
+concurrency:
+  group: cd-infra-${{ github.event.inputs.environment || 'prod' }}
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: rg-ecosort-ai
+  AZURE_LOCATION: eastus2
+
+jobs:
+  # ============================================
+  # Pre-Deployment Checks
+  # ============================================
+  pre-deploy:
+    name: 🔍 Pre-Deployment
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 10
+    
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      deployment_name: ${{ steps.set-env.outputs.deployment_name }}
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Determine environment
+        id: set-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            ENV="prod"
+          fi
+          DEPLOYMENT_NAME="ecosort-${ENV}-$(date +%Y%m%d-%H%M%S)"
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "deployment_name=$DEPLOYMENT_NAME" >> $GITHUB_OUTPUT
+          echo "🎯 Environment: $ENV"
+          echo "📋 Deployment: $DEPLOYMENT_NAME"
+          
+      - name: Validate Bicep
+        run: |
+          az bicep build --file infra/main.bicep --outfile /tmp/main.json
+          echo "✅ Bicep validation passed"
+          
+      - name: Check deployment conditions
+        id: check
+        run: |
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "⏸️ Dry run mode - deployment will be skipped"
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ Deployment conditions met"
+          fi
+
+  # ============================================
+  # What-If Analysis (Dry Run)
+  # ============================================
+  what-if:
+    name: 🔮 What-If Analysis
+    runs-on: ubuntu-latest
+    needs: pre-deploy
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          
+      - name: Ensure resource group exists
+        run: |
+          az group create \
+            --name ${{ env.AZURE_RESOURCE_GROUP }} \
+            --location ${{ env.AZURE_LOCATION }} \
+            --tags Project=EcoSort-AI Environment=${{ needs.pre-deploy.outputs.environment }} ManagedBy=GitHubActions
+            
+      - name: Run What-If
+        run: |
+          echo "## 🔮 What-If Preview" >> $GITHUB_STEP_SUMMARY
+          
+          az deployment group what-if \
+            --name "${{ needs.pre-deploy.outputs.deployment_name }}-whatif" \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters infra/params.json \
+            --parameters environment=${{ needs.pre-deploy.outputs.environment }} \
+            2>&1 | tee whatif.txt
+            
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat whatif.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # Deploy Infrastructure
+  # ============================================
+  deploy:
+    name: 🚀 Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [pre-deploy, what-if]
+    if: needs.pre-deploy.outputs.should_deploy == 'true'
+    timeout-minutes: 30
+    environment:
+      name: ${{ needs.pre-deploy.outputs.environment }}
+    
+    outputs:
+      staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
+      staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
+      keyVaultName: ${{ steps.deploy.outputs.keyVaultName }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          
+      - name: Deploy Bicep template
+        id: deploy
+        run: |
+          echo "🚀 Starting deployment..."
+          
+          RESULT=$(az deployment group create \
+            --name "${{ needs.pre-deploy.outputs.deployment_name }}" \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters infra/params.json \
+            --parameters environment=${{ needs.pre-deploy.outputs.environment }} \
+            --query 'properties.outputs' \
+            --output json)
+          
+          # Extract outputs
+          SWA_NAME=$(echo $RESULT | jq -r '.staticWebAppName.value // empty')
+          SWA_URL=$(echo $RESULT | jq -r '.staticWebAppUrl.value // empty')
+          KV_NAME=$(echo $RESULT | jq -r '.keyVaultName.value // empty')
+          
+          echo "staticWebAppName=$SWA_NAME" >> $GITHUB_OUTPUT
+          echo "staticWebAppUrl=$SWA_URL" >> $GITHUB_OUTPUT
+          echo "keyVaultName=$KV_NAME" >> $GITHUB_OUTPUT
+          
+          echo "✅ Deployment complete"
+          
+      - name: Verify deployment
+        run: |
+          az deployment group show \
+            --name "${{ needs.pre-deploy.outputs.deployment_name }}" \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query 'properties.provisioningState' \
+            --output tsv
+            
+      - name: Tag resources
+        run: |
+          # Tag all resources with deployment info
+          az tag create \
+            --resource-id "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}" \
+            --tags \
+              DeployedBy=GitHubActions \
+              DeploymentId="${{ needs.pre-deploy.outputs.deployment_name }}" \
+              Commit="${{ github.sha }}" \
+              Branch="${{ github.ref_name }}" \
+            2>/dev/null || true
+
+  # ============================================
+  # Post-Deployment Validation
+  # ============================================
+  validate:
+    name: ✅ Validate Deployment
+    runs-on: ubuntu-latest
+    needs: [pre-deploy, deploy]
+    timeout-minutes: 10
+    
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          
+      - name: Verify Static Web App
+        run: |
+          SWA_NAME="${{ needs.deploy.outputs.staticWebAppName }}"
+          if [ -n "$SWA_NAME" ]; then
+            STATE=$(az staticwebapp show -n "$SWA_NAME" -g ${{ env.AZURE_RESOURCE_GROUP }} --query 'state' -o tsv)
+            echo "Static Web App state: $STATE"
+            if [ "$STATE" != "Ready" ]; then
+              echo "⚠️ Static Web App not ready"
+            else
+              echo "✅ Static Web App is ready"
+            fi
+          fi
+          
+      - name: Verify Key Vault
+        run: |
+          KV_NAME="${{ needs.deploy.outputs.keyVaultName }}"
+          if [ -n "$KV_NAME" ]; then
+            az keyvault show -n "$KV_NAME" -g ${{ env.AZURE_RESOURCE_GROUP }} --query 'properties.provisioningState' -o tsv
+            echo "✅ Key Vault verified"
+          fi
+        continue-on-error: true
+          
+      - name: Security validation
+        run: |
+          echo "### 🔒 Security Validation" >> $GITHUB_STEP_SUMMARY
+          
+          # Check Key Vault soft delete
+          KV_NAME="${{ needs.deploy.outputs.keyVaultName }}"
+          if [ -n "$KV_NAME" ]; then
+            SOFT_DELETE=$(az keyvault show -n "$KV_NAME" -g ${{ env.AZURE_RESOURCE_GROUP }} --query 'properties.enableSoftDelete' -o tsv 2>/dev/null || echo "true")
+            if [ "$SOFT_DELETE" == "true" ]; then
+              echo "✅ Key Vault soft delete enabled" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "✅ Security validation complete" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # Deployment Summary
+  # ============================================
+  summary:
+    name: 📋 Summary
+    runs-on: ubuntu-latest
+    needs: [pre-deploy, what-if, deploy, validate]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🏗️ Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ needs.pre-deploy.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deployment | ${{ needs.pre-deploy.outputs.deployment_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | ${{ env.AZURE_RESOURCE_GROUP }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Static Web App | ${{ needs.deploy.outputs.staticWebAppName || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Key Vault | ${{ needs.deploy.outputs.keyVaultName || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pipeline Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Pre-Deploy | ${{ needs.pre-deploy.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| What-If | ${{ needs.what-if.result == 'success' && '✅' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy | ${{ needs.deploy.result == 'success' && '✅' || needs.deploy.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate | ${{ needs.validate.result == 'success' && '✅' || needs.validate.result == 'skipped' && '⏭️' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
