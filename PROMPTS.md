@@ -1,6 +1,6 @@
 # AI Prompts Documentation
 
-This document contains all AI system prompts and instructions used in EcoSort-AI for waste classification.
+This document contains all AI system prompts and instructions used in EcoSort-AI for waste classification and live object detection.
 
 ---
 
@@ -8,6 +8,7 @@ This document contains all AI system prompts and instructions used in EcoSort-AI
 
 - [System Prompts](#system-prompts)
 - [Classification Prompts](#classification-prompts)
+- [Live Detection Prompts](#live-detection-prompts)
 - [Response Formatting](#response-formatting)
 - [Prompt Engineering Guidelines](#prompt-engineering-guidelines)
 
@@ -118,6 +119,49 @@ For each item provide:
 
 ---
 
+## Live Detection Prompts
+
+### Real-Time Object Detection Prompt
+
+Used for live webcam detection with bounding box output:
+
+```markdown
+You are an object detection system for waste classification. 
+Detect ALL objects visible in this image.
+
+IMPORTANT RULES:
+1. Detect EVERYTHING - bottles, cups, paper, food, electronics, containers, etc.
+2. If you see ANY object, report it. Do not say "no objects detected" if items are visible.
+3. Return bounding boxes as [ymin, xmin, ymax, xmax] with values 0-1000.
+4. Provide confidence percentage and waste category for each item.
+
+Categories: recyclable, compostable, landfill, hazardous, special
+
+Return ONLY valid JSON:
+{
+  "detections": [
+    {
+      "label": "plastic bottle",
+      "category": "recyclable", 
+      "confidence": 95,
+      "box": [100, 200, 800, 600]
+    }
+  ]
+}
+```
+
+### Bounding Box Color Mapping
+
+| Category | Color | RGB |
+|----------|-------|-----|
+| Recyclable | Green | (100, 200, 0) |
+| Compostable | Brown | (139, 90, 43) |
+| Landfill | Gray | (100, 100, 100) |
+| Hazardous | Red | (220, 50, 50) |
+| Special | Yellow | (220, 180, 50) |
+
+---
+
 ## Prompt Engineering Guidelines
 
 ### Best Practices
@@ -147,6 +191,7 @@ For each item provide:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2026-01-19 | Added live detection prompts with bounding boxes |
 | 1.0.0 | 2026-01-15 | Initial prompt set |
 
 ---

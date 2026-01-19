@@ -5,10 +5,10 @@
 [![Azure Static Web Apps](https://img.shields.io/badge/Azure-Static%20Web%20Apps-0078D4?logo=microsoft-azure)](https://azure.microsoft.com/services/app-service/static/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io)
-[![Gemini](https://img.shields.io/badge/Google-Gemini%202.5%20Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Gemini](https://img.shields.io/badge/Google-Gemini%202.0%20Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-EcoSort-AI is a production-ready GenAI application that uses Google Gemini 2.5 Flash to classify waste items through image recognition, helping users make better recycling decisions.
+EcoSort-AI is a production-ready GenAI application that uses Google Gemini 2.0 Flash to classify waste items through image recognition and **live webcam detection**, helping users make better recycling decisions.
 
 ---
 
@@ -28,11 +28,12 @@ EcoSort-AI is a production-ready GenAI application that uses Google Gemini 2.5 F
 
 ## ✨ Features
 
-- 📸 **Real-time Image Classification** - Upload or capture waste images for instant categorization
-- 🤖 **Gemini 2.5 Flash Integration** - Leverages Google's latest multimodal AI model
-- ♻️ **Smart Recycling Guidance** - Provides disposal recommendations based on local regulations
-- 🌍 **Multi-language Support** - Accessible in multiple languages
-- 📊 **Analytics Dashboard** - Track your recycling impact over time
+- 📸 **Image Upload Classification** - Upload waste images for instant AI-powered categorization
+- 📹 **Live Webcam Detection** - Real-time object detection with bounding boxes via WebRTC
+- 🤖 **Gemini 2.0 Flash Integration** - Leverages Google's multimodal AI model for accurate detection
+- 🎯 **Bounding Box Visualization** - Color-coded boxes showing detected items and categories
+- ♻️ **Smart Recycling Guidance** - Provides disposal recommendations for each detected item
+- ⚙️ **Adjustable Detection Speed** - Configurable detection interval (1-10 seconds)
 - 🔒 **Enterprise Security** - Azure Key Vault integration for secrets management
 
 ---
@@ -63,8 +64,10 @@ EcoSort-AI is a production-ready GenAI application that uses Google Gemini 2.5 F
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Streamlit 1.40+ |
-| AI/ML | Google Gemini 2.5 Flash |
+| Frontend | Streamlit 1.53+ |
+| Live Video | streamlit-webrtc, WebRTC |
+| Image Processing | OpenCV, Pillow |
+| AI/ML | Google Gemini 2.0 Flash |
 | Cloud Platform | Microsoft Azure |
 | Infrastructure | Azure Bicep (IaC) |
 | CI/CD | GitHub Actions |
@@ -107,8 +110,13 @@ EcoSort-AI is a production-ready GenAI application that uses Google Gemini 2.5 F
 
 5. **Run the application**
    ```bash
-   streamlit run app/main.py
+   streamlit run app/main.py --server.port 8509
    ```
+
+6. **Open in browser**
+   - Navigate to `http://localhost:8509`
+   - Use **Upload Image** tab for static image classification
+   - Use **Live Camera** tab for real-time webcam detection with bounding boxes
 
 ---
 
