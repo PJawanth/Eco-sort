@@ -42,6 +42,7 @@ def sample_grayscale_image() -> Image.Image:
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Set up mock environment variables for testing."""
+    # Tests should not rely on a real API key; use a dummy value
     monkeypatch.setenv("GOOGLE_API_KEY", "test_api_key_12345")
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")

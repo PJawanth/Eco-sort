@@ -132,6 +132,16 @@ EcoSort-AI is a production-ready GenAI application that uses Google Gemini 2.0 F
 
 See [.env.example](.env.example) for all configuration options.
 
+### Using GitHub Secrets (recommended)
+
+For CI/CD and deployments, set the Gemini API key as a repository secret named `GOOGLE_API_KEY`.
+
+1. In GitHub, go to `Settings` -> `Secrets` -> `Actions`.
+2. Click `New repository secret` and add `GOOGLE_API_KEY`.
+3. Workflows will automatically inject this secret into CI runs.
+
+Local development: copy `.env.example` to `.env` and set `GOOGLE_API_KEY` locally for testing.
+
 ---
 
 ## 🚢 Deployment

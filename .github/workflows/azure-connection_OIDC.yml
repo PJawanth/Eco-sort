@@ -1,0 +1,33 @@
+name: Connect GitHub to Azure (OIDC Test)
+
+on:
+  workflow_dispatch:   # Manual trigger button
+
+permissions:
+  id-token: write      # REQUIRED for OIDC
+  contents: read
+
+jobs:
+  connect-to-azure:
+    name: Test Azure Login via OIDC
+    runs-on: ubuntu-latest
+
+    # If you used environment-based federated credential, keep this:
+    environment: prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify Azure Connection
+        run: |
+          echo "Logged into Azure successfully"
+          az account show
+          az group list -o table

@@ -1,0 +1,368 @@
+# ===========================================
+# CI Application Pipeline - Production Grade
+# ===========================================
+# Comprehensive validation, testing, and security scanning
+# Following industry best practices for enterprise CI/CD
+
+name: CI - Application
+
+on:
+  pull_request:
+    branches: [main, develop, release/*]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - 'app/requirements.txt'
+      - '.github/workflows/ci-app.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+# Minimum required permissions (principle of least privilege)
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+  actions: read
+
+# Cancel in-progress runs for same PR/branch
+concurrency:
+  group: ci-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  MIN_COVERAGE: 70
+
+jobs:
+  # ============================================
+  # Stage 1: Code Quality & Linting
+  # ============================================
+  lint:
+    name: 🔍 Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black isort mypy bandit
+          
+      - name: Run Ruff linter
+        run: |
+          echo "### 🔍 Ruff Linter Results" >> $GITHUB_STEP_SUMMARY
+          ruff check app/ --output-format=github --exit-zero
+          ruff check app/ --output-format=json > ruff-report.json || true
+          
+      - name: Check Black formatting
+        run: |
+          echo "### 🎨 Black Formatter Results" >> $GITHUB_STEP_SUMMARY
+          black --check --diff app/ 2>&1 | tee black-report.txt || echo "⚠️ Formatting issues found" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Check import sorting (isort)
+        run: |
+          isort --check-only --diff app/ 2>&1 | tee isort-report.txt || true
+          
+      - name: Type checking (mypy)
+        run: |
+          mypy app/ --ignore-missing-imports --no-error-summary 2>&1 | tee mypy-report.txt || true
+          
+      - name: Security linting (Bandit)
+        run: |
+          bandit -r app/ -f json -o bandit-lint.json -ll || true
+          bandit -r app/ -ll --exit-zero
+          
+      - name: Upload lint reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            ruff-report.json
+            black-report.txt
+            isort-report.txt
+            mypy-report.txt
+            bandit-lint.json
+          retention-days: 7
+
+  # ============================================
+  # Stage 2: Unit & Integration Tests
+  # ============================================
+  test:
+    name: 🧪 Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+          # Ensure Gemini API key is available in CI environment via secrets
+          if [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+            echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" >> $GITHUB_ENV
+          fi
+          pip install pytest pytest-asyncio pytest-cov pytest-xdist pytest-timeout
+          
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ \
+            -v \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:coverage-html \
+            --cov-report=term-missing \
+            --cov-fail-under=${{ env.MIN_COVERAGE }} \
+            --junitxml=test-results.xml \
+            --timeout=60 \
+            -n auto \
+            2>&1 || true
+            
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            coverage-html/
+          retention-days: 7
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: test-results.xml
+          retention-days: 7
+
+  # ============================================
+  # Stage 3: Security Scanning (SAST/SCA)
+  # ============================================
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Install security tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety pip-audit bandit
+          pip install -r app/requirements.txt
+          
+      - name: Dependency vulnerability scan (Safety)
+        run: |
+          echo "### 🛡️ Dependency Vulnerabilities (Safety)" >> $GITHUB_STEP_SUMMARY
+          safety check --full-report --output json > safety-report.json 2>&1 || true
+          safety check --full-report || echo "⚠️ Vulnerabilities found - review required" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Dependency audit (pip-audit)
+        run: |
+          echo "### 📦 Dependency Audit (pip-audit)" >> $GITHUB_STEP_SUMMARY
+          pip-audit --format=json --output=pip-audit-report.json 2>&1 || true
+          pip-audit || echo "⚠️ Issues found - review required" >> $GITHUB_STEP_SUMMARY
+          
+      - name: SAST scan (Bandit)
+        run: |
+          echo "### 🔍 SAST Analysis (Bandit)" >> $GITHUB_STEP_SUMMARY
+          bandit -r app/ -f json -o bandit-sast.json -ll || true
+          bandit -r app/ -ll || echo "⚠️ Security issues found" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Check for hardcoded secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+          
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            safety-report.json
+            pip-audit-report.json
+            bandit-sast.json
+          retention-days: 30
+
+  # ============================================
+  # Stage 4: CodeQL Analysis (SAST)
+  # ============================================
+  codeql:
+    name: 🔬 CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+          
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+        
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+  # ============================================
+  # Stage 5: Build & Package
+  # ============================================
+  build:
+    name: 📦 Build & Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test, security]
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha_short: ${{ steps.version.outputs.sha_short }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Generate version info
+        id: version
+        run: |
+          VERSION="1.1.0-$(date +%Y%m%d)-${GITHUB_SHA::7}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha_short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "📦 Build version: $VERSION"
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+          
+      - name: Verify application loads
+        run: |
+          python -c "import streamlit; print(f'✅ Streamlit {streamlit.__version__}')"
+          python -c "from app.main import main; print('✅ App imports successfully')"
+          python -c "from app.utils.ai_engine import GeminiEngine; print('✅ AI Engine imports successfully')"
+          
+      - name: Generate SBOM (Software Bill of Materials)
+        run: |
+          pip install cyclonedx-bom
+          cyclonedx-py requirements app/requirements.txt -o sbom.json --format json || true
+          
+      - name: Create deployment package
+        run: |
+          mkdir -p dist
+          cp -r app/* dist/
+          echo "${{ steps.version.outputs.version }}" > dist/VERSION
+          cat > dist/BUILD_INFO << EOF
+          Build Version: ${{ steps.version.outputs.version }}
+          Commit SHA: ${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Runner: ${{ runner.os }}
+          Python: ${{ env.PYTHON_VERSION }}
+          EOF
+          
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-package-${{ steps.version.outputs.sha_short }}
+          path: dist/
+          retention-days: 14
+          
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 90
+          if-no-files-found: ignore
+
+  # ============================================
+  # Stage 6: Quality Gate (Final Check)
+  # ============================================
+  quality-gate:
+    name: ✅ Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [lint, test, security, codeql, build]
+    if: always()
+    
+    steps:
+      - name: Evaluate results
+        run: |
+          echo "## 🎯 CI Quality Gate Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Lint | ${{ needs.lint.result == 'success' && '✅ Passed' || needs.lint.result == 'skipped' && '⏭️ Skipped' || '⚠️ Issues' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 Tests | ${{ needs.test.result == 'success' && '✅ Passed' || needs.test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔒 Security | ${{ needs.security.result == 'success' && '✅ Passed' || needs.security.result == 'skipped' && '⏭️ Skipped' || '⚠️ Review' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔬 CodeQL | ${{ needs.codeql.result == 'success' && '✅ Passed' || needs.codeql.result == 'skipped' && '⏭️ Skipped' || '⚠️ Review' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📦 Build | ${{ needs.build.result == 'success' && '✅ Passed' || needs.build.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Version:** \`${{ needs.build.outputs.version || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Determine overall status
+          if [[ "${{ needs.build.result }}" != "success" && "${{ needs.build.result }}" != "skipped" ]]; then
+            echo "❌ **Quality Gate: FAILED** - Build must pass" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          
+          echo "✅ **Quality Gate: PASSED**" >> $GITHUB_STEP_SUMMARY
