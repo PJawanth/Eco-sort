@@ -1,0 +1,114 @@
+# ===========================================
+# EcoSort-AI .gitignore
+# ===========================================
+
+# ----- Environment & Secrets -----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ----- Virtual Environments -----
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# ----- IDE & Editors -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ----- Testing -----
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.coverage
+.hypothesis/
+
+# ----- Jupyter Notebooks -----
+.ipynb_checkpoints/
+
+# ----- OS Files -----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ----- Logs -----
+*.log
+logs/
+log/
+
+# ----- Build Outputs -----
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ----- Azure -----
+.azure/
+azure.json
+
+# ----- Streamlit -----
+.streamlit/secrets.toml
+
+# ----- Temporary Files -----
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+
+# ----- Data Files (if large) -----
+*.csv
+*.xlsx
+*.parquet
+data/raw/
+data/processed/
+
+# ----- Model Files (if large) -----
+*.h5
+*.pkl
+*.joblib
+models/local/
