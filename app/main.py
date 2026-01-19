@@ -52,8 +52,8 @@ class DetectionState:
 # Global detection state instance
 _detection_state = DetectionState()
 
-from utils.ai_engine import GeminiEngine
-from components.webcam import render_webcam_capture
+from app.utils.ai_engine import GeminiEngine
+from app.components.webcam import render_webcam_capture
 
 # Load environment variables
 load_dotenv()
